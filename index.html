@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=640" />
+
+    <link rel="stylesheet" href="stylesheets/core.css" media="screen"/>
+    <link rel="stylesheet" href="stylesheets/mobile.css" media="handheld, only screen and (max-device-width:640px)"/>
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css"/>
+
+    <script type="text/javascript" src="javascripts/modernizr.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script type="text/javascript" src="javascripts/headsmart.min.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function () {
+        $('#main_content').headsmart()
+      })
+    </script>
+    <title>PoshAws by healthbox</title>
+  </head>
+
+  <body>
+    <a id="forkme_banner" href="https://github.com/healthbox/PoshAws">View on GitHub</a>
+    <div class="shell">
+
+      <header>
+        <span class="ribbon-outer">
+          <span class="ribbon-inner">
+            <h1>PoshAws</h1>
+            <h2>PowerShell commands to manage Amazon Web Services resources</h2>
+          </span>
+          <span class="left-tail"></span>
+          <span class="right-tail"></span>
+        </span>
+      </header>
+
+      <section id="downloads">
+        <span class="inner">
+          <a href="https://github.com/healthbox/PoshAws/zipball/master" class="zip"><em>download</em> .ZIP</a><a href="https://github.com/healthbox/PoshAws/tarball/master" class="tgz"><em>download</em> .TGZ</a>
+        </span>
+      </section>
+
+
+      <span class="banner-fix"></span>
+
+
+      <section id="main_content">
+        <h3>Installation</h3>
+
+<p>Get the source:</p>
+
+<ul>
+<li>
+<code>git clone https://github.com/healthbox/PoshAws.git</code>, or …</li>
+<li>download one of the archives provided.</li>
+</ul><p>In PowerShell, navigate to the directory where PoshAws is located and execute <code>.\install.ps1</code>.</p>
+
+<h3>Dependencies</h3>
+
+<p>PoshAws needs the AWS SDK assembly to work. You can get it from <a href="http://aws.amazon.com/sdkfornet/">Amazon</a> or <a href="https://nuget.org/packages/AWSSDK/">NuGet</a>.</p>
+
+<p>After you have the SDK assembly, you'll need to import it in each PowerShell session before using PoshAws.</p>
+
+<ul>
+<li>
+<code>Import-AwsSdk</code>, when the assembly is in your current directory (or a sub-directory).</li>
+<li>
+<code>Import-AwsSdk -SearchPath ..\some-otherdirectory</code>, when it's not.</li>
+</ul><h3>Credentials</h3>
+
+<p>PoshAws needs your AWS credentials to work. You can create them with <code>New-AwsCredentials</code>. The returned credentials can be passed to any PoshAws command with the <code>Credentials</code> parameter.</p>
+
+<div class="highlight"><pre><span class="nb">New-AwsCredentials</span> <span class="n">-AccessKeyId</span> <span class="n">YOUR_ACCESS_KEY_ID</span> <span class="n">-SecretAccessKey</span> <span class="n">YOUR_SECRET_SHHHH</span>
+</pre></div>
+
+<p>Doing this every time can be a real pain. PoshAws can store your credentials for you. Your credentials are stored <strong>in plain text</strong> in your PowerShell profile directory; so, be sure you understand how to protect your Windows profile.</p>
+
+<div class="highlight"><pre><span class="nb">New-AwsCredentials</span> <span class="n">-AccessKeyId</span> <span class="n">YOUR_ACCESS_KEY_ID</span> <span class="n">-SecretAccessKey</span> <span class="n">YOUR_SECRET_SHHHH</span> <span class="p">`</span>
+  <span class="p">|</span> <span class="nb">Add-StoredAwsCredentials</span> <span class="n">-Name</span> <span class="n">WhateverNameYouWouldLike</span>
+</pre></div>
+
+<p>Or, even simpler.</p>
+
+<div class="highlight"><pre><span class="nb">Add-StoredAwsCredentials</span> <span class="n">-Name</span> <span class="n">WhateverNameYouWouldLike</span> <span class="n">-AccessKeyId</span> <span class="n">YOUR_ACCESS_KEY_ID</span> <span class="n">-SecretAccessKey</span> <span class="n">YOUR_SECRET_SHHHH</span>
+</pre></div>
+
+<p>You can get your credentials back with <code>Get-StoredAwsCredentials -Name WhateverNameYouUsed</code> and list your stored credentials with <code>Get-StoredAwsCredentialNames</code>.</p>
+
+<p>Providing credentials to every command is tedious. To avoid this, you can use <code>Push-AwsCredentials</code> and <code>Pop-AwsCredentials</code>. For example:</p>
+
+<div class="highlight"><pre><span class="nb">Get-StoredAwsCredentials</span> <span class="n">-Name</span> <span class="n">EasyPeasy</span> <span class="p">|</span> <span class="nb">Push-AwsCredentials</span>
+<span class="c"># A slew of commands</span>
+<span class="nb">Pop-AwsCredentials</span>
+</pre></div>
+
+<p>One last thing. If your commands are running on an EC2 instance with an <a href="http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/UsingIAM.html#UsingIAMrolesWithAmazonEC2Instances">IAM role</a>, PoshAws will use the role's credentials without you having to do a thing.</p>
+      </section>
+
+      <footer>
+        <span class="ribbon-outer">
+          <span class="ribbon-inner">
+            <p>this project by <a href="https://github.com/healthbox">healthbox</a> can be found on <a href="https://github.com/healthbox/PoshAws">GitHub</a></p>
+          </span>
+          <span class="left-tail"></span>
+          <span class="right-tail"></span>
+        </span>
+        <p>Generated with <a href="http://pages.github.com">GitHub Pages</a> using Merlot</p>
+        <span class="octocat"></span>
+      </footer>
+
+    </div>
+
+    
+  </body>
+</html>
