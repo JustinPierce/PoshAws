@@ -1,3 +1,9 @@
+# This allows you work on the file as a script
+$_privateCommand = Get-Command -Name "__MakeWildcard"
+if (!$_privateCommand) {
+    . "$PSScriptRoot\QuotePrivateUnquoteFunctions.ps1"
+}
+
 $_credentialsPath = Join-Path (Split-Path $profile) .psaws
 
 [System.Collections.Stack]$global:PsAwsCredentialsStack = New-Object System.Collections.Stack
