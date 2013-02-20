@@ -5,6 +5,7 @@ function Get-SESIdentities {
     
     [CmdletBinding(DefaultParameterSetName = "Fake")]
     param(
+        [string]$Filter,
         [Parameter(ParameterSetName = "DomainsOnly")]
         [switch]$Domains,
         [Parameter(ParameterSetName = "AddressesOnly")]
@@ -17,6 +18,8 @@ function Get-SESIdentities {
     } else {
         $_creds = Get-AwsCredentials
     }
+
+    $_filter = __MakeWildcard $Filter
 
     $_client = New-Object Amazon.SimpleEmail.AmazonSimpleEmailServiceClient -ArgumentList $_creds
 
@@ -35,7 +38,8 @@ function Get-SESIdentities {
         $_resp = $_client.ListIdentities($_req)
         $_nextToken = $_resp.ListIdentitiesResult.NextToken
 
-        $_resp.ListIdentitiesResult.Identities
+        $_resp.ListIdentitiesResult.Identities `
+            | Where-Object { $_filter.IsMatch($_) }
 
     } while ($_nextToken)
 
@@ -45,6 +49,7 @@ function Get-SESVerifiedAddresses {
     
     [CmdletBinding()]
     param(
+        [string]$Filter,
         [Amazon.Runtime.AWSCredentials]$Credentials
     )
 
@@ -54,10 +59,13 @@ function Get-SESVerifiedAddresses {
         $_creds = Get-AwsCredentials
     }
 
+    $_filter = __MakeWildcard $Filter
+
     $_client = New-Object Amazon.SimpleEmail.AmazonSimpleEmailServiceClient -ArgumentList $_creds
 
     $_req = New-Object Amazon.SimpleEmail.Model.ListVerifiedEmailAddressesRequest
     $_resp = $_client.ListVerifiedEmailAddresses($_req)
-    $_resp.ListVerifiedEmailAddressesResult.VerifiedEmailAddresses
+    $_resp.ListVerifiedEmailAddressesResult.VerifiedEmailAddresses `
+        | Where-Object { $_filter.IsMatch($_) }
 
 }
