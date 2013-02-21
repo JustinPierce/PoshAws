@@ -1,3 +1,9 @@
+# This allows you work on the file as a script
+$_privateCommand = Get-Command -Name "__MakeWildcard"
+if (!$_privateCommand) {
+    . "$PSScriptRoot\QuotePrivateUnquoteFunctions.ps1"
+}
+
 $_PoshAwsSESDomain  = "Domain"
 $_PoshAwsSESAddress = "EmailAddress"
 
