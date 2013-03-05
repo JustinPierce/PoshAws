@@ -305,3 +305,98 @@ function Send-FileToS3 {
 
     return $_putResponse.ETag
 }
+
+function Copy-S3Object {
+
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, ParameterSetName = "ByKey")]
+        [string]$FromBucket,
+        [Parameter(Mandatory = $true, ParameterSetName = "ByKey")]
+        [string]$FromKey,
+        [Parameter(Mandatory = $true, ParameterSetName = "ByObject", ValueFromPipeline = $true)]
+        [Amazon.S3.Model.S3Object]$FromObject,
+        [string]$ToBucket,
+        [string]$ToKey,
+        [switch]$PreserveAcl,
+        [hashtable]$ReplaceMetadataWith,
+        [Amazon.Runtime.AWSCredentials]$Credentials,
+        [string]$Region
+    )
+
+    BEGIN {
+        
+        $_region = __RegionFromName($Region)
+
+        if ($Credentials) {
+            $_creds = $Credentials
+        }
+        else {
+            $_creds = Get-AwsCredentials
+        }
+
+        $_client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($_creds, $_region)
+
+    }
+    PROCESS {
+        
+        if ($FromBucket) {
+            $_fromBucket = $FromBucket
+            $_fromKey = $FromKey
+        } elseif ($FromObject) {
+            $_fromBucket = $FromObject.BucketName
+            $_fromKey = $FromObject.Key
+        } else {
+            throw "Huh?!"
+        }
+
+        if (!$ToBucket -and !$ToKey) {
+            throw "ToBucket, ToKey, or both must be provided!"
+        } elseif (!$ToBucket) {
+            $_toBucket = $_fromBucket
+            $_toKey = $ToKey
+        } elseif (!$ToKey) {
+            $_toBucket = $ToBucket
+            $_toKey = $_fromKey
+        } else {
+            $_toBucket = $ToBucket
+            $_toKey = $ToKey
+        }
+
+        Write-Verbose "Copying $_fromBucket/$_fromKey to $_toBucket/$_toKey ..."
+
+        $_request = New-Object Amazon.S3.Model.CopyObjectRequest
+        $_request.SourceBucket = $_fromBucket
+        $_request.SourceKey = $_fromKey
+        $_request.DestinationBucket = $_toBucket
+        $_request.DestinationKey = $_toKey
+        if ($ReplaceMetadataWith) {
+            Write-Verbose "Replacing object metadata ..."
+            $_request.Directive = "REPLACE"
+            $ReplaceMetadataWith.GetEnumerator() `
+                | ForEach-Object {
+                    $_headerName = $_.Key.ToString()
+                    $_headerValue = $_.Value.ToString()
+                    $_request.AddHeader($_headerName, $_headerValue)
+                    Write-Verbose "Added header $_headerName : $_headerValue"
+                }
+        } else {
+            $_request.Directive = "COPY"
+        }
+
+        if ($PreserveAcl) {
+            Write-Verbose "Copying ACL ..."
+            $_aclRequest = New-Object Amazon.S3.Model.GetACLRequest
+            $_aclRequest.BucketName = $_fromBucket
+            $_aclRequest.Key = $_fromKey
+            [Amazon.S3.Model.GetACLResponse]$_aclResponse = $_client.GetACL($_aclRequest)
+            $_request.Grants = $_aclResponse.AccessControlList.Grants
+        }
+
+        [Amazon.S3.Model.CopyObjectResponse]$_response = $_client.CopyObject($_request)
+
+        Write-Verbose "Copy complete."
+    }
+    END {}
+
+}
