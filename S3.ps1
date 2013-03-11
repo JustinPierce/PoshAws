@@ -32,45 +32,43 @@ function Get-S3Objects {
     }
     PROCESS {
 
-        $_bucketName = $null
+        $_bucketName = $BucketName
         if ($ResourceSummary) {
-            Write-Debug "Using resource summary."
-            if ($ResourceSummary.ResourceType -ne $_cfResourceTypes["S3Bucket"]) {
-                throw "Resource is not an S3 bucket!"
+            Write-Debug "Using resource summary to get bucket name"
+
+            $_resourceType = $ResourceSummary.ResourceType
+            $_resourceLogicalId = $ResourceSummary.LogicalResourceId
+            $_resourcePhysicalId = $ResourceSummary.PhysicalResourceId
+
+            if ($ResourceSummary.ResourceType -ne "AWS::S3::Bucket") {    
+                throw "Stack resource $_resourceLogicalId ($_resourcePhysicalId) is not an S3 bucket!"
             }
-            $_bucketName = $ResourceSummary | Select-Object -ExpandProperty PhysicalResourceId
+
+            $_bucketName = $_resourcePhysicalId
         }
         elseif ($Bucket) {
-            Write-Debug "Using bucket."
+            Write-Debug "Using bucket object to get bucket name"
             $_bucketName = $Bucket | Select-Object -ExpandProperty BucketName
         }
-        elseif ($BucketName) {
-            Write-Debug "Using bucket name."
-            $_bucketName = $BucketName
-        }
-        else {
-            throw "Wha?!"
-        }
-           
+        
+        $_marker = $null
 
-        $_bucketName `
-            | ForEach-Object {
+        do {
+            $_req = New-Object -TypeName Amazon.S3.Model.ListObjectsRequest
+            $_req.Marker = $_marker
+            $_req.BucketName = $_bucketName
 
-                $_again = $true
+            $_resp = $_s3Client.ListObjects($_req)
+
+            if ($_resp.IsTruncated) {
+                $_marker = $_resp.NextMarker
+            } else {
                 $_marker = $null
-
-                while ($_again) {
-                    $_req = New-Object -TypeName Amazon.S3.Model.ListObjectsRequest
-                    $_req.Marker = $_marker
-                    $_req.BucketName = $_
-
-                    $_resp = $_s3Client.ListObjects($_req)
-
-                    $_again = $_resp.IsTruncated
-                    $_marker = $_resp.NextMarker
-                    $_resp.S3Objects
-                }
             }
+
+            $_resp.S3Objects
+
+        } while ($_marker)
     }
     END {}
 
@@ -85,7 +83,8 @@ function Remove-S3Object {
         [Parameter(Mandatory = $true, ParameterSetName = "ByKey")]
         [string]$BucketName,
         [Parameter(Mandatory = $true, ParameterSetName = "ByObject", ValueFromPipeline = $true)]
-        [Amazon.S3.Model.S3Object[]]$Object,
+        [Amazon.S3.Model.S3Object]$Object,
+        [string]$VersionId,
         [Amazon.Runtime.AWSCredentials]$Credentials,
         [string]$Region
     )
@@ -107,32 +106,26 @@ function Remove-S3Object {
         # There's a multi-object delete, but I don't think we care about
         # that level of optimization right now.
 
-        if ($Key) {
-            Write-Debug "Key-based delete"
-            $_toRemove = $Key | ForEach-Object { @{ "Key" = $_; "Bucket" = $BucketName } }
-        }
-        elseif ($Object) {
-            Write-Debug "Object-based delete"
-            $_toRemove = $Object | ForEach-Object { @{ "Key" = $_.Key; "Bucket" = $_.BucketName } }
-        }
-        else {
-            throw "Wha?!"
+        $_key = $Key
+        $_bucketName = $BucketName
+
+        if ($Object) {
+            Write-Debug "Using S3 object to get key and bucket name"
+            $_key = $Object.Key
+            $_bucketName = $Object.BucketName
         }
 
-        $_toRemove `
-            | ForEach-Object {
+        Write-Debug "Removing $_key from $_bucketName"
+
+        $_req = New-Object Amazon.S3.Model.DeleteObjectRequest
+        $_req.BucketName = $_bucketName
+        $_req.Key = $_key
+        if ($VersionId) {
+            Write-Debug "Removing version ID $VersionId"
+            $_req.VersionId = $VersionId
+        }
                 
-                $_bucket = $_["Bucket"]
-                $_key = $_["Key"]
-
-                Write-Debug "Deleting '$_key' from '$_bucket'"
-
-                $_req = New-Object Amazon.S3.Model.DeleteObjectRequest
-                $_req.BucketName = $_bucket
-                $_req.Key = $_key
-                
-                $_s3Client.DeleteObject($_req) | Out-Null
-            }
+        $_s3Client.DeleteObject($_req) | Out-Null
     }
     END {}
 
@@ -192,20 +185,13 @@ function Get-S3Buckets {
     else {
         $_creds = Get-AwsCredentials
     }
+
+    $_nameWildcard = __MakeWildcard -Pattern $Name
     
     $_s3Client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($_creds, $_region)
     $_req = New-Object -TypeName Amazon.S3.Model.ListBucketsRequest
     $_s3Client.ListBuckets($_req).Buckets `
-        | Where-Object {
-            if ($Name) {
-                $_wo = [System.Management.Automation.WildcardOptions]::IgnoreCase
-                $_wc = New-Object -TypeName System.Management.Automation.WildcardPattern -ArgumentList $Name, $_wo
-                $_wc.IsMatch($_.BucketName)
-            }
-            else {
-                $true
-            }
-        }
+        | Where-Object { $_nameWildcard.IsMatch($_.BucketName) }
 
 }
 
@@ -253,16 +239,10 @@ function Remove-S3Bucket {
         $_creds = Get-AwsCredentials
     }
 
+    $_bucketName = $Name
     if ($Bucket) {
-        Write-Debug "By bucket."
+        Write-Debug "Using object to get bucket name"
         $_bucketName = $Bucket.BucketName
-    }
-    elseif ($Name) {
-        Write-Debug "By name."
-        $_bucketName = $Name
-    }
-    else {
-        throw "Wha?!"
     }
 
     $_s3Client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($_creds, $_region)
@@ -277,33 +257,38 @@ function Send-FileToS3 {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [string]$AwsAccessKeyId,
-        [Parameter(Mandatory=$true)]
-        [string]$AwsSecretAccessKey,
-        [Parameter(Mandatory=$true)]
         [string]$BucketName,
+        [string]$Key,
         [Parameter(Mandatory=$true)]
         [string]$FilePath,
+        [Amazon.Runtime.AWSCredentials]$Credentials,
         [string]$Region
     )
 
-    if ($Region) {
-        $_regions = [Amazon.RegionEndpoint]::EnumerableAllRegions | Where { $_.SystemName -eq $Region }
-        $_region = $_regions[0]
-    } else { 
-        $_region = [Amazon.RegionEndpoint]::USEast1
+    $_region = __RegionFromName($Region)
+
+    if ($Credentials) {
+        $_creds = $Credentials
+    }
+    else {
+        $_creds = Get-AwsCredentials
     }
     
-    $_s3Client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($AwsAccessKeyId, $AwsSecretAccessKey, $_region)
+    $_s3Client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($_creds, $_region)
+
+    if ($Key) {
+        $_key = $Key
+    } else {
+        $_key = [System.IO.Path]::GetFileName($PackagePath)
+    }
 
     $_putRequest = New-Object -TypeName Amazon.S3.Model.PutObjectRequest
     $_putRequest.BucketName = $BucketName
-    $_putRequest.Key = [System.IO.Path]::GetFileName($PackagePath)
+    $_putRequest.Key = $_key
     $_putRequest.FilePath = $FilePath
 
-    $_putResponse = $_s3Client.PutObject($_putRequest)
+    $_s3Client.PutObject($_putRequest) | Out-Null
 
-    return $_putResponse.ETag
 }
 
 function Copy-S3Object {
@@ -339,27 +324,26 @@ function Copy-S3Object {
 
     }
     PROCESS {
-        
-        if ($FromBucket) {
-            $_fromBucket = $FromBucket
-            $_fromKey = $FromKey
-        } elseif ($FromObject) {
-            $_fromBucket = $FromObject.BucketName
-            $_fromKey = $FromObject.Key
-        } else {
-            throw "Huh?!"
-        }
 
         if (!$ToBucket -and !$ToKey) {
             throw "ToBucket, ToKey, or both must be provided!"
-        } elseif (!$ToBucket) {
-            $_toBucket = $_fromBucket
-            $_toKey = $ToKey
-        } elseif (!$ToKey) {
+        }
+        
+        $_fromBucket = $FromBucket
+        $_fromKey = $FromKey
+        if ($FromObject) {
+            Write-Debug "Using 'FromObject' to get object bucket and key"
+            $_fromBucket = $FromObject.BucketName
+            $_fromKey = $FromObject.Key
+        }
+
+        $_toBucket = $_fromBucket
+        $_toKey = $_fromKey
+
+        if ($ToBucket) {
             $_toBucket = $ToBucket
-            $_toKey = $_fromKey
-        } else {
-            $_toBucket = $ToBucket
+        } 
+        if ($ToKey) {
             $_toKey = $ToKey
         }
 
@@ -393,7 +377,7 @@ function Copy-S3Object {
             $_request.Grants = $_aclResponse.AccessControlList.Grants
         }
 
-        [Amazon.S3.Model.CopyObjectResponse]$_response = $_client.CopyObject($_request)
+        $_client.CopyObject($_request) | Out-Null
 
         Write-Verbose "Copy complete."
     }
