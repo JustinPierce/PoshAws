@@ -76,8 +76,7 @@ function Set-Route53CName {
     $_changeRSRequest.HostedZoneId = $HostedZoneId
     $_changeRSRequest.ChangeBatch = $_changeBatch
 
-    $_changeRSResponse = $_r53Client.ChangeResourceRecordSets($_changeRSRequest)
-    $_changeRSResponse.ChangeResourceRecordSetsResult.ChangeInfo.Status
+    $_r53Client.ChangeResourceRecordSets($_changeRSRequest) | Out-Null
 }
 
 function Get-Route53HostedZones {
