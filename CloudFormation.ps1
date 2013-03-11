@@ -1,5 +1,5 @@
 # This allows you work on the file as a script
-$_privateCommand = Get-Command -Name "__MakeWildcard"
+$_privateCommand = Get-Command -Name "__MakeWildcard" -ErrorAction Continue
 if (!$_privateCommand) {
     . "$PSScriptRoot\QuotePrivateUnquoteFunctions.ps1"
 }
@@ -75,41 +75,31 @@ function Remove-CFStack {
     }
     PROCESS {
 
+        $_stackName = $StackName
         if ($StackSummary) {
-            Write-Debug "Using stack summary."
+            Write-Debug "Using stack summary to get name"
             $_stackName = $StackSummary | Select-Object -ExpandProperty StackName
         }
-        elseif ($StackName) {
-            Write-Debug "Using stack name."
-            $_stackName = $StackName
-        }
-        else {
-            throw "Wha?!"
-        }
         
-        $_stackName `
-            | ForEach-Object {
-
-                if (!$SkipConfirmation) {
-                    Write-Host "You are about to remove a CloudFormation stack, which is potentially very, very bad." `
-                        -ForegroundColor White `
-                        -BackgroundColor Red
-                    Write-Host "Please confirm you want the stack removed by typing the stack name exactly." `
-                        -ForegroundColor White `
-                        -BackgroundColor Red
-                    $_confirmed = Read-Host "Stack Name"
-                    if ($_confirmed -cne $_) {
-                        throw "Confirmation did not match stack name!"
-                    }
-                }
-
-                $_req = New-Object Amazon.CloudFormation.Model.DeleteStackRequest
-                $_req.StackName = $_
-                $_cfClient.DeleteStack($_req)
+        if (!$SkipConfirmation) {
+            Write-Host "You are about to remove a CloudFormation stack, which is potentially very, very bad." `
+                -ForegroundColor White `
+                -BackgroundColor Red
+            Write-Host "Please confirm you want the stack removed by typing the stack name exactly." `
+                -ForegroundColor White `
+                -BackgroundColor Red
+            $_confirmed = Read-Host "Stack Name"
+            if ($_confirmed -cne $_) {
+                throw "Confirmation did not match stack name!"
             }
+        }
+
+        $_req = New-Object Amazon.CloudFormation.Model.DeleteStackRequest
+        $_req.StackName = $_stackName
+        $_cfClient.DeleteStack($_req)
+
     }
-    END {
-    }
+    END {}
 
 }
 
@@ -142,42 +132,32 @@ function Get-CFStackResources {
     }
     PROCESS {
 
+        $_stackName = $StackName
         if ($StackSummary) {
-            Write-Debug "Using stack summary."
+            Write-Debug "Using stack summary to get name"
             $_stackName = $StackSummary | Select-Object -ExpandProperty StackName
         }
-        elseif ($StackName) {
-            Write-Debug "Using stack name."
-            $_stackName = $StackName
-        }
-        else {
-            throw "Wha?!"
-        }
         
-        $_stackName `
-            | ForEach-Object {
-                $_req = New-Object Amazon.CloudFormation.Model.ListStackResourcesRequest
-                $_req.StackName = $_
-                $_resp = $_cfClient.ListStackResources($_req)
+        $_req = New-Object Amazon.CloudFormation.Model.ListStackResourcesRequest
+        $_req.StackName = $_stackName
+        $_resp = $_cfClient.ListStackResources($_req)
 
-                $_logicalWildcard = __MakeWildcard($LogicalId)
-                $_typeWildcard = __MakeWildcard($ResourceType)
-                $_statusWildcard = __MakeWildcard($ResourceStatus)
+        $_logicalWildcard = __MakeWildcard($LogicalId)
+        $_typeWildcard = __MakeWildcard($ResourceType)
+        $_statusWildcard = __MakeWildcard($ResourceStatus)
 
-                $_resp.ListStackResourcesResult.StackResourceSummaries `
-                    | Where-Object {
-                        $_logicalWildcard.IsMatch($_.LogicalResourceId)
-                    } `
-                    | Where-Object {
-                        $_typeWildcard.IsMatch($_.ResourceType)
-                    } `
-                    | Where-Object {
-                        $_statusWildcard.IsMatch($_.ResourceStatus)
-                    }
+        $_resp.ListStackResourcesResult.StackResourceSummaries `
+            | Where-Object {
+                $_logicalWildcard.IsMatch($_.LogicalResourceId)
+            } `
+            | Where-Object {
+                $_typeWildcard.IsMatch($_.ResourceType)
+            } `
+            | Where-Object {
+                $_statusWildcard.IsMatch($_.ResourceStatus)
             }
     }
-    END {
-    }
+    END {}
 
 }
 
@@ -301,7 +281,7 @@ function Set-CFStack {
         throw "Stack '$Name' already exists. Use -Force to update an existing stack."
     }
 
-    $_testedTemplate = Test-CFTemplate -TemplatePath $TemplatePath -Credentials $_creds
+    $_testedTemplate = Test-CFTemplate -TemplatePath $TemplatePath -Credentials $_creds -Region $Region
     
     $_capabilities = $_testedTemplate.Capabilities
     $_foundParameters = $_testedTemplate.Parameters
@@ -380,13 +360,10 @@ function Get-CFStackOutputs {
         $_creds = Get-AwsCredentials
     }
     
+    $_stackName = $StackName
     if ($StackSummary) {
-        Write-Debug "By summary."
-        $_stackName = $StackSummary.StackName
-    }
-    elseif ($StackName) {
-        Write-Debug "By name."
-        $_stackName = $StackName
+        Write-Debug "Using stack summary to get name"
+        $_stackName = $StackSummary | Select-Object -ExpandProperty StackName
     }
 
     $_cfClient = [Amazon.AWSClientFactory]::CreateAmazonCloudFormationClient($_creds, $_region)
@@ -394,8 +371,9 @@ function Get-CFStackOutputs {
     $_outputReq = New-Object -TypeName Amazon.CloudFormation.Model.DescribeStacksRequest
     $_outputReq.StackName = $_stackName
 
-    [Amazon.CloudFormation.Model.Stack]$_stack = $_cfClient.DescribeStacks($_outputReq).DescribeStacksResult.Stacks `
-                                                    | Select-Object -First 1
+    [Amazon.CloudFormation.Model.Stack]$_stack = `
+        $_cfClient.DescribeStacks($_outputReq).DescribeStacksResult.Stacks `
+            | Select-Object -First 1
 
     if (!$_stack) {
         throw "Stack $Name not found."
