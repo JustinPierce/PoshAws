@@ -89,14 +89,14 @@ function Remove-CFStack {
                 -ForegroundColor White `
                 -BackgroundColor Red
             $_confirmed = Read-Host "Stack Name"
-            if ($_confirmed -cne $_) {
+            if ($_confirmed -cne $_stackName) {
                 throw "Confirmation did not match stack name!"
             }
         }
 
         $_req = New-Object Amazon.CloudFormation.Model.DeleteStackRequest
         $_req.StackName = $_stackName
-        $_cfClient.DeleteStack($_req)
+        $_cfClient.DeleteStack($_req) | Out-Null
 
     }
     END {}
