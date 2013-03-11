@@ -56,3 +56,72 @@ function Import-AwsSdk {
     }
 
 }
+
+function ConvertTo-Hashtable {
+
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline = $true, Position = 0)]
+        $InputObject,
+        [switch]$TreatFalseyAsEmpty
+    )
+
+    if ($InputObject) {
+        if ($InputObject -is [hashtable]) {
+            $InputObject
+        } elseif ($InputObject -is [PSCustomObject]) {
+            $_table = @{}
+            $InputObject.PSObject.Properties `
+                | Where-Object {
+                    $_.IsGettable -and $_.IsInstance
+                } `
+                | ForEach-Object {
+                    $_table.Add($_.Name, $_.Value)
+                }
+            $_table
+        } else {
+            $_inputType = $InputObject.GetType()
+            throw "Can't convert $_inputType to a hashtable."
+        }
+    } elseif ($TreatFalseyAsEmpty) {
+        @{}
+    } else {
+        [hashtable]$null
+    }
+
+}
+
+function Merge-Objects {
+    
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true, Position = 0)]
+        $InputObject,
+        [Parameter(Position = 1)]
+        $AdditionalValues,
+        [ValidateSet("Hashtable", "PSCustomObject", IgnoreCase = $true)]
+        [Parameter(Position = 2)]
+        $OutputType = "Hashtable"
+    )
+
+    [hashtable]$_inputHashtable = ConvertTo-Hashtable -InputObject $InputObject
+    [hashtable]$_additionalHashtable = ConvertTo-Hashtable -InputObject $AdditionalValues -TreatFalseyAsEmpty
+
+    $_merged = @{}
+
+    $_inputHashtable.GetEnumerator() `
+        | ForEach-Object {
+            $_merged.Add($_.Key, $_.Value)
+        }
+
+    $_additionalHashtable.GetEnumerator() `
+        | ForEach-Object {
+            $_merged[$_.Key] = $_.Value
+        }
+
+    if ($OutputType -eq "Hashtable") {
+        $_merged
+    } else {
+        New-Object psobject -Property $_merged
+    }
+}

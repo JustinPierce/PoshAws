@@ -253,9 +253,15 @@ function Set-CFStack {
         [Parameter(Mandatory=$true)]
         [string]$TemplatePath,
         [switch]$Force,
-        [hashtable]$TemplateParams,
+        [string]$TemplateParametersPath,
+        [hashtable]$TemplateParameters = @{},
+        # Leaving this here for backwards compatibility.
+        [hashtable]$TemplateParams = @{},
+        [ValidateSet("None", "Required", "All", IgnoreCase = $true)]
+        [string]$PromptForParameters = "None",
         [Amazon.Runtime.AWSCredentials]$Credentials,
-        [string]$Region
+        [string]$Region,
+        [switch]$WhatIf
     )
 
     if (!(Test-Path $TemplatePath)) {
@@ -286,6 +292,25 @@ function Set-CFStack {
     $_capabilities = $_testedTemplate.Capabilities
     $_foundParameters = $_testedTemplate.Parameters
 
+    # Get parameters specified in $TemplateParameterFile
+    $_parametersFromFile = @{}
+    if ($TemplateParametersPath) {
+
+        if (!(Test-Path $TemplateParametersPath)) {
+            throw "Could not find TemplateParameterFile at $TemplateParametersPath"
+        }
+
+        $_parametersFromFile = Get-Content $TemplateParametersPath -Raw `
+                                | ConvertFrom-Json `
+                                | ConvertTo-Hashtable -TreatFalseyAsEmpty
+
+    }
+
+    # Get parameters passed in hashtable
+    [hashtable]$_parameters = $_parametersFromFile `
+                                | Merge-Objects -AdditionalValues $TemplateParameters `
+                                | Merge-Objects -AdditionalValues $TemplateParams -OutputType Hashtable
+
     # PS and generic lists. Whee.
     $_parameterType = [Amazon.CloudFormation.Model.Parameter]
     $_parameterListType = [System.Collections.Generic.List``1].MakeGenericType(@($_parameterType))
@@ -293,23 +318,53 @@ function Set-CFStack {
 
     $_foundParameters | ForEach-Object {
 
-        $_currParam = New-Object -TypeName Amazon.CloudFormation.Model.Parameter
-        $_currParam.ParameterKey = $_.ParameterKey
+        $_currentKey = $_.ParameterKey
+        $_currentValue = $null
 
-        if ($TemplateParams -and $TemplateParams.ContainsKey($_currParam.ParameterKey)) {
-            $_currParam.ParameterValue = $TemplateParams[$_currParam.ParameterKey]
-        } elseif ($_.DefaultValue -and $_.DefaultValue -ne "") {
-            $_currParam.ParameterValue = $_.DefaultValue
-        } else {
-            throw "Missing parameter value for " + $_currParam.ParameterKey
+        if ($_.DefaultValue) {
+            $_currentValue = $_.DefaultValue
+        }
+        if ($_parameters.ContainsKey($_currentKey)) {
+            $_currentValue = $_parameters[$_currentKey]
         }
 
+        if (($PromptForParameters -eq "All") -or (!$_currentValue -and ($PromptForParameters -eq "Required"))) {
+            $_defaultPrompt = $_currentValue
+            if (!$_defaultPrompt) {
+                $_defaultPrompt = "<No Value>"
+            }
+            $_promptValue = Read-Host "Value for parameter '$_currentKey' [$_defaultPrompt]"
+            if ($_promptValue) {
+                $_currentValue = $_promptValue
+            }
+        }
+
+        $_currParam = New-Object -TypeName Amazon.CloudFormation.Model.Parameter
+        $_currParam.ParameterKey = $_currentKey
+        $_currParam.ParameterValue = $_currentValue
+
         $_parameterList.Add($_currParam)
+
+        Write-Verbose "Setting parameter '$_currentKey' to '$_currentValue'."
     }
 
-    if ($_alreadyExists) {
+    if ($WhatIf) {
         
-        Write-Host "Updating stack $Name ..."
+        $_action = "created"
+        if ($_alreadyExists) {
+            $_action = "updated"
+        }
+
+        Write-Host "$Name would have been $_action." -ForegroundColor White -BackgroundColor DarkGreen
+        Write-Host "The following parameter values would have been used." -ForegroundColor White -BackgroundColor DarkGreen
+        $_parameterList | Format-Table
+
+        Write-Host "The following capabilities would have been used." -ForegroundColor White -BackgroundColor DarkGreen
+        $_capabilities  | Format-List
+    }
+    elseif ($_alreadyExists) {
+        
+        Write-Verbose "Updating stack $Name ..."
 
         $_updateRequest = New-Object -TypeName Amazon.CloudFormation.Model.UpdateStackRequest
         $_updateRequest.Capabilities = $_capabilities
@@ -319,11 +374,13 @@ function Set-CFStack {
 
         $_updateResponse = $_cfClient.UpdateStack($_updateRequest)
 
-        Write-Host "Updated " + $_updateResponse.UpdateStackResult.StackId
+        $_stackId = $_updateResponse.UpdateStackResult.StackId
+
+        Write-Verbose "Updated $_stackId"
 
     } else {
 
-        Write-Host "Creating stack $Name ..."
+        Write-Verbose "Creating stack $Name ..."
 
         $_createRequest = New-Object -TypeName Amazon.CloudFormation.Model.CreateStackRequest
         $_createRequest.Capabilities = $_capabilities
@@ -333,7 +390,9 @@ function Set-CFStack {
 
         $_createResponse = $_cfClient.CreateStack($_createRequest)
 
-        Write-Host "Created " + $_createResponse.CreateStackResult.StackId
+        $_stackId = $_createResponse.CreateStackResult.StackId
+
+        Write-Verbose "Created $_stackId"
 
     }
 }
