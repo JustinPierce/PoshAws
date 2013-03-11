@@ -253,6 +253,9 @@ function Set-CFStack {
         [Parameter(Mandatory=$true)]
         [string]$TemplatePath,
         [switch]$Force,
+        [string]$TemplateParametersPath,
+        [hashtable]$TemplateParameters = @{},
+        # Leaving this here for backwards compatibility.
         [hashtable]$TemplateParams = @{},
         [ValidateSet("None", "Required", "All", IgnoreCase = $true)]
         [string]$PromptForParameters = "None",
@@ -289,6 +292,25 @@ function Set-CFStack {
     $_capabilities = $_testedTemplate.Capabilities
     $_foundParameters = $_testedTemplate.Parameters
 
+    # Get parameters specified in $TemplateParameterFile
+    $_parametersFromFile = @{}
+    if ($TemplateParametersPath) {
+
+        if (!(Test-Path $TemplateParametersPath)) {
+            throw "Could not find TemplateParameterFile at $TemplateParametersPath"
+        }
+
+        $_parametersFromFile = Get-Content $TemplateParametersPath -Raw `
+                                | ConvertFrom-Json `
+                                | ConvertTo-Hashtable -TreatFalseyAsEmpty
+
+    }
+
+    # Get parameters passed in hashtable
+    [hashtable]$_parameters = $_parametersFromFile `
+                                | Merge-Objects -AdditionalValues $TemplateParameters `
+                                | Merge-Objects -AdditionalValues $TemplateParams -OutputType Hashtable
+
     # PS and generic lists. Whee.
     $_parameterType = [Amazon.CloudFormation.Model.Parameter]
     $_parameterListType = [System.Collections.Generic.List``1].MakeGenericType(@($_parameterType))
@@ -302,8 +324,8 @@ function Set-CFStack {
         if ($_.DefaultValue) {
             $_currentValue = $_.DefaultValue
         }
-        if ($TemplateParams.ContainsKey($_currentKey)) {
-            $_currentValue = $TemplateParams[$_currentKey]
+        if ($_parameters.ContainsKey($_currentKey)) {
+            $_currentValue = $_parameters[$_currentKey]
         }
 
         if (($PromptForParameters -eq "All") -or (!$_currentValue -and ($PromptForParameters -eq "Required"))) {
