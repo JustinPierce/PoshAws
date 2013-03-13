@@ -42,7 +42,7 @@ function Import-AwsSdk {
             # Copy it to prevent file locking issues.
             $_shadowPath = Join-Path (Join-Path $env:TEMP (Get-Random)) .\awscommands\AWSSDK.dll
 
-            New-Item -Path (Split-Path $_shadowPath) -ItemType directory -ErrorAction SilentlyContinue
+            New-Item -Path (Split-Path $_shadowPath) -ItemType directory -ErrorAction SilentlyContinue | Out-Null
 
             Copy-Item $_sdkAssemblyName $_shadowPath -Force
 
